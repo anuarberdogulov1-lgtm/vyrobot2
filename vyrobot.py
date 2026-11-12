@@ -20,9 +20,9 @@ from aiogram.types import (
 # Ваши данные
 BOT_TOKEN = "8984282221:AAHQg9oUfzoGDZM_acrv8K-LEW4Eo9UrA14"
 ADMIN_ID = 8064940088
-LAVA_SHOP_ID = "YOUR_LAVA_SHOP_ID"  # Замените на ваш Shop ID от Lava
-WEBSITE_URL = "https://ваш-сайт.kz"   # Укажите адрес вашего сайта
-TG_CHANNEL_URL = "https://t.me/ваш_канал" # Укажите ссылку на ваш ТГ-канал
+KASPI_NUMBER = "+7 705 722 89 75"                   # Номер Kaspi для оплаты
+WEBSITE_URL = "https://kavrosait-lj8o.vercel.app/"  # Сайт
+TG_CHANNEL_URL = "https://t.me/kavroshop"           # Telegram-канал
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
@@ -60,8 +60,8 @@ class OrderStates(StatesGroup):
     waiting_for_screenshot = State()
 
 class AdminStates(StatesGroup):
-    waiting_for_track = State()  # Ожидание ввода трек-номера
-    waiting_for_custom_message = State()  # Ожидание ввода личного сообщения покупателю
+    waiting_for_track = State()
+    waiting_for_custom_message = State()
 
 # Главное меню с сайтом и ТГ-каналом
 def main_menu_kb():
@@ -112,7 +112,6 @@ async def cmd_start(message: Message, command: CommandObject, state: FSMContext)
         )
         return
 
-    # Приветствие с информацией о канале и правилами (без возврата)
     start_text = (
         "👋 **Добро пожаловать в наш официальный магазин!**\n\n"
         "🌐 Весь каталог товаров доступен на нашем сайте. Выбирайте нужную вещь и нажимайте кнопку заказа — бот поможет быстро всё оформить!\n\n"
@@ -137,7 +136,7 @@ async def show_terms(message: Message):
     text = (
         "📜 **Договор оферты и Политика конфиденциальности**\n\n"
         "1. Общие положения: Магазин осуществляет дистанционную продажу товаров.\n"
-        "2. Оплата и Доставка: Заказ передается в доставку после 100% предоплаты и предоставления чека.\n"
+        "2. Оплата и Доставка: Заказ передается в доставку после 100% предоплаты (перевод на Kaspi) и предоставления чека.\n"
         "3. Возврат: Продажа является окончательной, возврат и обмен товаров надлежащего качества не производится."
     )
     await message.answer(text, parse_mode="Markdown")
@@ -184,8 +183,6 @@ async def process_phone(message: Message, state: FSMContext):
     
     order_id = f"ORD-{uuid.uuid4().hex[:6].upper()}"
     
-    pay_link = f"https://pay.lava.kz/pay?shopId={LAVA_SHOP_ID}&amount={data['amount']}&orderId={order_id}"
-    
     conn = sqlite3.connect("shop.db")
     cursor = conn.cursor()
     cursor.execute("""
@@ -195,10 +192,6 @@ async def process_phone(message: Message, state: FSMContext):
     conn.commit()
     conn.close()
 
-    pay_kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="💳 Оплатить счет в Lava", url=pay_link)]
-    ])
-
     await state.update_data(order_id=order_id)
     await state.set_state(OrderStates.waiting_for_screenshot)
     
@@ -206,10 +199,12 @@ async def process_phone(message: Message, state: FSMContext):
         f"📋 **Заказ успешно создан!**\n\n"
         f"🆔 Номер заказа: `{order_id}`\n"
         f"🛍 Товар: {data['product']}\n"
-        f"💰 Сумма к оплате: {data['amount']} KZT\n\n"
-        f"1️⃣ Нажмите кнопку ниже и оплатите счет через Lava.\n"
-        f"2️⃣ После оплаты **отправьте скриншот чека (фотографию)** прямо сюда в чат!",
-        reply_markup=pay_kb,
+        f"💰 Сумма к оплате: **{int(data['amount'])} KZT**\n\n"
+        f"💳 **Реквизиты для оплаты (Kaspi):**\n"
+        f"📱 Номер: `{KASPI_NUMBER}`\n\n"
+        f"1️⃣ Переведите **ровно {int(data['amount'])} тг** на номер выше через Kaspi.\n"
+        f"2️⃣ В **комментарии к переводу** укажите номер заказа: `{order_id}`.\n"
+        f"3️⃣ После оплаты **отправьте скриншот чека (фотографию)** прямо сюда в чат!",
         parse_mode="Markdown"
     )
 
@@ -248,7 +243,7 @@ async def process_screenshot(message: Message, state: FSMContext):
         f"🛍 Товар: {product}\n"
         f"📍 Адрес: {address}\n"
         f"📞 Телефон: {phone}\n\n"
-        f"Проверьте поступление денег и выберите действие:"
+        f"Проверьте поступление денег на Kaspi и выберите действие:"
     )
 
     await bot.send_photo(
@@ -263,7 +258,7 @@ async def process_screenshot(message: Message, state: FSMContext):
 async def wrong_screenshot_type(message: Message):
     await message.answer("⚠️ Пожалуйста, отправьте именно **фотографию (скриншот)** чека об оплате.")
 
-# ==================== УПРАВЛЕНИЕ АДМИНА (КНОПКИ ТРЕКА И ОТВЕТА) ====================
+# ==================== УПРАВЛЕНИЕ АДМИНА ====================
 
 @router.callback_query(F.data.startswith(("confirm_", "reject_")))
 async def admin_decision(callback: CallbackQuery, state: FSMContext):
@@ -290,7 +285,6 @@ async def admin_decision(callback: CallbackQuery, state: FSMContext):
         conn.commit()
         conn.close()
 
-        # Две кнопки у админа после подтверждения оплаты
         admin_actions_kb = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="📦 Ввести трек Казпочты", callback_data=f"settrack_{order_id}")],
             [InlineKeyboardButton(text="💬 Написать покупателю", callback_data=f"reply_{order_id}")]
